@@ -1,5 +1,15 @@
 # @chat-adapter/whatsapp
 
+## 4.44.0
+
+### Patch Changes
+
+- Updated dependencies [b8b6f0f]
+- Updated dependencies [49e6833]
+- Updated dependencies [17f6005]
+  - chat@4.44.0
+  - @chat-adapter/shared@4.44.0
+
 ## 4.43.0
 
 ### Patch Changes

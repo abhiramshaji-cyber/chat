@@ -1,5 +1,20 @@
 # @chat-adapter/telegram
 
+## 4.44.0
+
+### Minor Changes
+
+- 6300fe4: Add a `persistThreadHistory` option to the Telegram adapter. It defaults to `true`, so nothing changes unless you set it. With `false`, the Chat SDK stops saving Telegram messages in the state adapter, both incoming messages and the bot's own posts, for apps that keep their own transcript. `persistThreadHistory` is now typed `boolean`, so a subclass can also override it.
+- 8494511: Add a `longMessages: "split"` option that sends text posts longer than Telegram's message limit as consecutive messages instead of truncating them. Parts are paced to Telegram's per-chat limits, split tables repeat their header row, and a rate-limited part after the first is sent again after Telegram's `retry_after` period. Ordered lists in MarkdownV2 messages now keep their start number.
+
+### Patch Changes
+
+- Updated dependencies [b8b6f0f]
+- Updated dependencies [49e6833]
+- Updated dependencies [17f6005]
+  - chat@4.44.0
+  - @chat-adapter/shared@4.44.0
+
 ## 4.43.0
 
 ### Patch Changes

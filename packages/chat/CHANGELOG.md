@@ -1,5 +1,23 @@
 # chat
 
+## 4.44.0
+
+### Minor Changes
+
+- 49e6833: Add `BaseFormatConverter.parseIncoming()`, which returns a message's `text` and `formatted` AST from a single markdown parse. Very long text can be slow to parse, so text longer than `maxIncomingParseLength` (default `DEFAULT_MAX_INCOMING_PARSE_LENGTH`, 16,384 characters) skips parsing: `text` holds the raw input and `formatted` holds it as a single text node. Subclasses can override `maxIncomingParseLength`.
+  
+  The Discord, Google Chat, GitHub, GitLab, and Teams adapters now use `parseIncoming()` for incoming messages, so they parse each message once instead of twice. Messages over the limit keep their content but lose markdown structure in `formatted`. In Teams, `text` for such a message also keeps the raw HTML tags, and in GitLab a mention inside a code block or quote in such a note counts as a mention.
+  
+  Upstream releases fix slow parsing of long lists in `mdast-util-from-markdown` 2.1.0 and of large tables in `micromark-extension-gfm-table` 2.1.2. Both are within the ranges Chat SDK's dependencies already accept, so update them in your lockfile to pick up the fixes. Keep `micromark` at 4.0.2, since 4.0.3 slows down parsing of block quotes, nested lists, and setext headings.
+
+### Patch Changes
+
+- b8b6f0f: `requestApproval()` from `chat/workflow` now verifies each click server-side instead of reading the decision and user from the webhook request. When a button with a `callbackUrl` is clicked, Chat SDK now stores a receipt in the state adapter with the verified action ID, user, thread, and message, and adds its identifier to the callback payload as `receipt`. `requestApproval()` takes the decision and user only from that receipt, accepts each receipt once, and ignores requests without a valid one. If the receipt can't be stored, Chat SDK skips the callback POST and restores the button's callback token so the user can click again. When someone outside `approvers` clicks, `requestApproval()` now also refreshes the card's buttons, because each button's callback works only once and that click previously left the button unusable for approvers.
+  
+  The `Chat` instance that handles the click and the one running the workflow must share a state adapter, and `requestApproval()` now throws when passed a `Thread` that wasn't created by Chat SDK. Errors logged when a callback URL POST fails now include only the URL's origin, under `callbackOrigin` instead of `callbackUrl`.
+- Updated dependencies [6300fe4]
+  - @chat-adapter/catalog@4.44.0
+
 ## 4.43.0
 
 ### Minor Changes

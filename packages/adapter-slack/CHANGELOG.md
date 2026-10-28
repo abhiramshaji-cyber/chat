@@ -1,5 +1,36 @@
 # @chat-adapter/slack
 
+## 4.44.0
+
+### Minor Changes
+
+- 80fa77b: Dispatch Slack `app_uninstalled` events to `onUninstalled` handlers. Subscribe your Slack app to the `app_uninstalled` bot event to receive them. `event.conversationId` is the installation key, the `team_id` or the `enterprise_id` for org-wide installs, so a handler can pass it to `deleteInstallation`, and `event.tenantId` is the Enterprise Grid `enterprise_id` when the event carries one. Because Slack revokes the app's tokens before it sends the event, the adapter dispatches it without resolving a bot token, including when an `installationProvider` no longer returns the installation. `tokens_revoked` events don't call `onUninstalled`, because Slack also sends them for revocations that leave the app installed. They now skip the installation lookup too, so multi-workspace apps no longer log missing-installation warnings for them. An `onUninstalled` handler written for Teams also receives Slack uninstalls once your Slack app subscribes to `app_uninstalled`, so check `event.adapter.name` in handlers that assume Teams payloads. Apps already subscribed to the event start receiving it when they upgrade.
+- 17f6005: Add `isBotMention(event, botUserId)`, which reports whether a Slack `message` or `app_mention` event invokes the bot the same way the adapter sets `message.isMention`. Slack sends `app_mention` for the bot's token inside code, so the event type alone does not show that a user addressed the bot. Apps that route or acknowledge Slack events before a Chat SDK bot handles them can use it to make the same decision. It is exported from `@chat-adapter/slack/webhook`, which imports no runtime packages, and from `@chat-adapter/slack`, and follows the `isBotMention` contract documented for adapters. `botUserId` must be a Slack user ID; an empty or malformed value throws a `TypeError`.
+- bb9c3dd: `withBotToken` accepts an optional `botUserId`, so a multi-workspace adapter can recognize the bot's own messages outside webhook handling. A multi-workspace adapter has no fixed bot user ID, and `withBotToken` previously stored only the token and `installationId`. Inside the callback, `adapter.botUserId` was `undefined`, and messages the bot had posted, such as those returned by `fetchMessages`, had `author.isMe` set to `false`. Pass the installation's `botUserId` from `getInstallation`:
+  
+  ```ts
+  const install = await slackAdapter.getInstallation(teamId);
+  if (!install) throw new Error("Workspace not installed");
+  
+  await slackAdapter.withBotToken(install.botToken, fn, {
+    installationId: teamId,
+    botUserId: install.botUserId,
+  });
+  ```
+
+### Patch Changes
+
+- 1ba1cc4: Parse bulleted and numbered lists from Slack's message composer into mdast `list` nodes, including nested items. Slack flattens these lists in `event.text` to lines starting with `•` or `◦`, so when a message's `rich_text` blocks contain a list, the adapter now builds the message body from the blocks. `message.text` for such a list reads `one\ntwo` instead of `• one\n• two`. Literal list text such as `---` and `[x]` stays literal, and paragraphs in subsequent rich text blocks stay outside the list.
+  
+  Messages without a list, with blocks other than `rich_text` and tables, or with unsupported rich text elements still use `event.text`. This preserves references such as `message_mention` that the block renderer cannot reconstruct.
+  
+  Link labels that contain `>` in rich text blocks, including table cells, now stay inside the link instead of ending it early.
+- Updated dependencies [b8b6f0f]
+- Updated dependencies [49e6833]
+- Updated dependencies [17f6005]
+  - chat@4.44.0
+  - @chat-adapter/shared@4.44.0
+
 ## 4.43.0
 
 ### Patch Changes
