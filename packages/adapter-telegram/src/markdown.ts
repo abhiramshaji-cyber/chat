@@ -34,7 +34,7 @@ const LINK_URL_SPECIAL_CHARS = /([)\\])/g;
 
 // A line break inside code or pre is literal there, so only a bare one gets the `>` prefix
 const QUOTE_LINE_TOKENS =
-  /\\[\s\S]|```(?:\\[\s\S]|[^\\])*?```|`(?:\\[\s\S]|[^`\\])*`|\n/g;
+  /\\[\s\S]|\]\((?:\\[\s\S]|[^)\\])*\)|```(?:\\[\s\S]|[^\\])*?```|`(?:\\[\s\S]|[^`\\])*`|\n/g;
 
 /**
  * How the adapter intends a message to be rendered.

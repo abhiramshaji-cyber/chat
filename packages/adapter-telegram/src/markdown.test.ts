@@ -260,6 +260,12 @@ describe("TelegramFormatConverter", () => {
 
     it("keeps escaped backticks from opening code", () => {
       expect(converter.fromMarkdown("> a \\`\n> b")).toBe(">a \\`\n>b");
+      expect(
+        converter.fromMarkdown("> [a](https://x.com/a`b)\n> next\n> `c` d")
+      ).toBe(">[a](https://x.com/a`b)\n>next\n>`c` d");
+      expect(
+        converter.fromMarkdown("> <https://x.com/a`b>\n> next\n> `c` d")
+      ).toBe(">[https://x\\.com/a\\`b](https://x.com/a`b)\n>next\n>`c` d");
     });
 
     it("keeps single paragraph quotes and their line breaks", () => {
