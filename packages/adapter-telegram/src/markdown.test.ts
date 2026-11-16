@@ -219,6 +219,62 @@ describe("TelegramFormatConverter", () => {
     });
   });
 
+  describe("fromAst — block quotes", () => {
+    it("separates quoted paragraphs with a blank quoted line", () => {
+      expect(converter.fromMarkdown("> First.\n>\n> Second.")).toBe(
+        ">First\\.\n>\n>Second\\."
+      );
+    });
+
+    it("separates a quoted list from the text before it", () => {
+      expect(converter.fromMarkdown("> Intro:\n>\n> - one\n> - two")).toBe(
+        ">Intro:\n>\n>\\- one\n>\\- two"
+      );
+    });
+
+    it("keeps a quote apart from the text around it", () => {
+      expect(converter.fromMarkdown("Before\n\n> a\n>\n> b\n\nAfter")).toBe(
+        "Before\n\n>a\n>\n>b\n\nAfter"
+      );
+    });
+
+    it("prefixes every line of nested quotes", () => {
+      expect(
+        converter.fromMarkdown(
+          "> Outer.\n>\n> > Inner one.\n> >\n> > Inner two.\n>\n> After."
+        )
+      ).toBe(">Outer\\.\n>\n>>Inner one\\.\n>>\n>>Inner two\\.\n>\n>After\\.");
+    });
+
+    it("keeps quoted code free of the line prefix", () => {
+      expect(
+        converter.fromMarkdown(
+          "> Code:\n>\n> ```js\n> a\n> b\n> ```\n>\n> End."
+        )
+      ).toBe(">Code:\n>\n>```js\na\nb\n```\n>\n>End\\.");
+      expect(converter.fromMarkdown("> `a\n> b` c\n> d")).toBe(">`a\nb` c\n>d");
+      expect(
+        converter.fromMarkdown("> - item\n>\n>   ```\n>   x\n>   ```")
+      ).toBe(">\\- item\n>```\nx\n```");
+    });
+
+    it("keeps escaped backticks from opening code", () => {
+      expect(converter.fromMarkdown("> a \\`\n> b")).toBe(">a \\`\n>b");
+    });
+
+    it("keeps single paragraph quotes and their line breaks", () => {
+      expect(converter.fromMarkdown("> Just one.")).toBe(">Just one\\.");
+      expect(converter.fromMarkdown("> **one\n> two**")).toBe(">*one\n>two*");
+    });
+
+    it("drops empty quotes and quote children that render to nothing", () => {
+      expect(converter.fromMarkdown(">")).toBe("");
+      expect(
+        converter.fromMarkdown("> [a]: https://chat-sdk.dev\n>\n> Text.")
+      ).toBe(">Text\\.");
+    });
+  });
+
   describe("fromAst — nested formatting", () => {
     it("renders bold containing italic", () => {
       // Markdown: **bold _italic_** → MarkdownV2: *bold _italic_*

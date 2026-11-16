@@ -32,6 +32,10 @@ const CODE_BLOCK_SPECIAL_CHARS = /([`\\])/g;
 // Inside (...) of inline links, only ) and \ need escaping
 const LINK_URL_SPECIAL_CHARS = /([)\\])/g;
 
+// A line break inside code or pre is literal there, so only a bare one gets the `>` prefix
+const QUOTE_LINE_TOKENS =
+  /\\[\s\S]|```(?:\\[\s\S]|[^\\])*?```|`(?:\\[\s\S]|[^`\\])*`|\n/g;
+
 /**
  * How the adapter intends a message to be rendered.
  *
@@ -339,11 +343,18 @@ function renderMarkdownV2(node: Nodes): string {
     }
 
     case "blockquote": {
-      const inner = node.children.map(renderMarkdownV2).join("\n");
-      return inner
-        .split("\n")
-        .map((line) => `>${line}`)
-        .join("\n");
+      const blocks = node.children
+        .map(renderMarkdownV2)
+        .filter((block) => block.trim());
+      if (blocks.length === 0) {
+        return "";
+      }
+      const quoted = blocks
+        .join("\n\n")
+        .replace(QUOTE_LINE_TOKENS, (token) =>
+          token === "\n" ? "\n>" : token
+        );
+      return `>${quoted}`;
     }
 
     case "list":
