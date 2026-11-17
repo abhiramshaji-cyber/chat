@@ -26,7 +26,6 @@ The generated app uses the [Memory state adapter](/adapters/official/memory) for
 The adapter auto-detects credentials from `GITHUB_TOKEN` (or `GITHUB_APP_ID`/`GITHUB_PRIVATE_KEY`), `GITHUB_WEBHOOK_SECRET`, and `GITHUB_BOT_USERNAME`.
 
 For managed credentials and webhook verification, see [Vercel Connect](#vercel-connect).
-
 </Callout>
 
 ```typescript title="lib/bot.ts" lineNumbers
@@ -91,7 +90,6 @@ createGitHubAdapter({
 ```
 
 Or set the `GITHUB_BOT_USER_ID` environment variable, which the adapter auto-detects.
-
 </Callout>
 
 Create the connector and attach it to your project with the [Vercel CLI](https://vercel.com/docs/cli/connect). `--trigger-path` registers the GitHub webhook route as the trigger destination, and `vercel env pull` downloads a development OIDC token for local runs:
@@ -128,10 +126,7 @@ We recommend a GitHub App. It has better rate limits and security than a persona
 Set `installationId` to accept comments only from that GitHub App installation. After verification, a new comment (`issue_comment` or `pull_request_review_comment` with action `created`) from a different installation gets a `404`, handlers don't run, and the adapter logs a warning with both IDs. The check runs whether you verify with `webhookSecret` or a custom `webhookVerifier`, and other event types and actions aren't checked.
 
 <Callout type="info">
-  Deliveries without an `installation` object still reach handlers. GitHub omits
-  it from repository and organization webhooks, so those keep working in this
-  mode. Vercel Connect mode (`installationToken`) has no configured installation
-  ID and skips this check.
+Deliveries without an `installation` object still reach handlers. GitHub omits it from repository and organization webhooks, so those keep working in this mode. Vercel Connect mode (`installationToken`) has no configured installation ID and skips this check.
 </Callout>
 
 ```typescript
@@ -175,7 +170,8 @@ createGitHubAdapter({
   type={{
     token: {
       type: "string",
-      description: "Personal Access Token. Auto-detected from `GITHUB_TOKEN`.",
+      description:
+        "Personal Access Token. Auto-detected from `GITHUB_TOKEN`.",
     },
     appId: {
       type: "string | number",
@@ -230,15 +226,15 @@ required, plus either `webhookSecret` or a `webhookVerifier`.
 
 ### Environment variables
 
-| Variable                 | Required                              | Description                                                                   |
-| ------------------------ | ------------------------------------- | ----------------------------------------------------------------------------- |
-| `GITHUB_TOKEN`           | One auth mode required                | Personal access token.                                                        |
-| `GITHUB_APP_ID`          | One auth mode required                | GitHub App ID. Use with `GITHUB_PRIVATE_KEY`.                                 |
-| `GITHUB_PRIVATE_KEY`     | One auth mode required                | GitHub App private key (PEM). Use with `GITHUB_APP_ID`.                       |
-| `GITHUB_INSTALLATION_ID` | No                                    | Installation ID for a single-tenant GitHub App. Omit for multi-tenant setups. |
-| `GITHUB_WEBHOOK_SECRET`  | Yes, unless using a `webhookVerifier` | Webhook secret.                                                               |
-| `GITHUB_BOT_USERNAME`    | No                                    | Bot username for @mention detection. Defaults to `github-bot`.                |
-| `GITHUB_BOT_USER_ID`     | Recommended with Vercel Connect       | Numeric ID of the bot user, so the adapter can recognize its own comments.    |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GITHUB_TOKEN` | One auth mode required | Personal access token. |
+| `GITHUB_APP_ID` | One auth mode required | GitHub App ID. Use with `GITHUB_PRIVATE_KEY`. |
+| `GITHUB_PRIVATE_KEY` | One auth mode required | GitHub App private key (PEM). Use with `GITHUB_APP_ID`. |
+| `GITHUB_INSTALLATION_ID` | No | Installation ID for a single-tenant GitHub App. Omit for multi-tenant setups. |
+| `GITHUB_WEBHOOK_SECRET` | Yes, unless using a `webhookVerifier` | Webhook secret. |
+| `GITHUB_BOT_USERNAME` | No | Bot username for @mention detection. Defaults to `github-bot`. |
+| `GITHUB_BOT_USER_ID` | Recommended with Vercel Connect | Numeric ID of the bot user, so the adapter can recognize its own comments. |
 
 ## Webhooks
 
@@ -256,16 +252,16 @@ A comment counts as a mention when it contains `@` followed by the bot's usernam
 
 ## Reactions
 
-| SDK emoji     | GitHub reaction |
-| ------------- | --------------- |
-| `thumbs_up`   | +1              |
-| `thumbs_down` | -1              |
-| `laugh`       | laugh           |
-| `confused`    | confused        |
-| `heart`       | heart           |
-| `hooray`      | hooray          |
-| `rocket`      | rocket          |
-| `eyes`        | eyes            |
+| SDK emoji | GitHub reaction |
+|-----------|----------------|
+| `thumbs_up` | +1 |
+| `thumbs_down` | -1 |
+| `laugh` | laugh |
+| `confused` | confused |
+| `heart` | heart |
+| `hooray` | hooray |
+| `rocket` | rocket |
+| `eyes` | eyes |
 
 ## Installation lookup
 
@@ -275,7 +271,7 @@ Resolve the GitHub App installation ID associated with a `Thread` or `Message`:
 bot.onNewMention(async (thread, message) => {
   const installationIdFromThread = await github.getInstallationId(thread);
   const installationIdFromMessage = await github.getInstallationId(
-    message.threadId,
+    message.threadId
   );
 });
 ```
@@ -307,11 +303,11 @@ The previous `.client` getter still works as a deprecated alias for `.octokit`.
 
 Issues and pull requests map to threads, and comments map to messages:
 
-| Type            | Context              | Thread ID format                                  |
-| --------------- | -------------------- | ------------------------------------------------- |
-| PR-level        | PR Conversation tab  | `github:{owner}/{repo}:{prNumber}`                |
+| Type | Context | Thread ID format |
+|------|---------|-----------------|
+| PR-level | PR Conversation tab | `github:{owner}/{repo}:{prNumber}` |
 | Review comments | PR Files Changed tab | `github:{owner}/{repo}:{prNumber}:rc:{commentId}` |
-| Issue comments  | Issue thread         | `github:{owner}/{repo}:issue:{issueNumber}`       |
+| Issue comments | Issue thread | `github:{owner}/{repo}:issue:{issueNumber}` |
 
 ## Feature support
 
