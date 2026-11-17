@@ -2199,37 +2199,37 @@ describe("GitHubAdapter", () => {
     });
   });
 
-  describe("inbound markdown bounds (via handleWebhook)", () => {
-    async function dispatchComment(
-      eventType: "issue_comment" | "pull_request_review_comment",
-      body: string
-    ): Promise<Message> {
-      const mockChat = createMockChatInstance();
-      mockUsersGetAuthenticated.mockResolvedValueOnce({
-        data: { id: 777, login: "test-bot" },
-      });
-      await adapter.initialize(mockChat);
+  async function dispatchComment(
+    eventType: "issue_comment" | "pull_request_review_comment",
+    body: string
+  ): Promise<Message> {
+    const mockChat = createMockChatInstance();
+    mockUsersGetAuthenticated.mockResolvedValueOnce({
+      data: { id: 777, login: "test-bot" },
+    });
+    await adapter.initialize(mockChat);
 
-      const payload =
-        eventType === "issue_comment"
-          ? makeIssueCommentPayload({
-              comment: { ...makeIssueCommentPayload().comment, body },
-            })
-          : makeReviewCommentPayload({
-              comment: { ...makeReviewCommentPayload().comment, body },
-            });
-      const rawBody = JSON.stringify(payload);
-      const response = await adapter.handleWebhook(
-        makeWebhookRequest(rawBody, eventType, signPayload(rawBody))
-      );
+    const payload =
+      eventType === "issue_comment"
+        ? makeIssueCommentPayload({
+            comment: { ...makeIssueCommentPayload().comment, body },
+          })
+        : makeReviewCommentPayload({
+            comment: { ...makeReviewCommentPayload().comment, body },
+          });
+    const rawBody = JSON.stringify(payload);
+    const response = await adapter.handleWebhook(
+      makeWebhookRequest(rawBody, eventType, signPayload(rawBody))
+    );
 
-      const message = vi.mocked(mockChat.processMessage).mock.calls[0]?.[2];
-      if (response.status !== 200 || !(message instanceof Message)) {
-        throw new Error("Expected processMessage to receive a Message");
-      }
-      return message;
+    const message = vi.mocked(mockChat.processMessage).mock.calls[0]?.[2];
+    if (response.status !== 200 || !(message instanceof Message)) {
+      throw new Error("Expected processMessage to receive a Message");
     }
+    return message;
+  }
 
+  describe("inbound markdown bounds (via handleWebhook)", () => {
     it.each([
       "issue_comment",
       "pull_request_review_comment",
@@ -2262,6 +2262,40 @@ describe("GitHubAdapter", () => {
       expect(message.formatted).toEqual(root([paragraph([text(body)])]));
       expect(() => JSON.stringify(message.formatted)).not.toThrow();
       expect(() => JSON.stringify(message.toJSON())).not.toThrow();
+    });
+  });
+
+  describe("isMention (via handleWebhook)", () => {
+    const cases = [
+      ["a plain mention", "@test-bot please review", true],
+      ["a mention in any case", "@Test-Bot please review", true],
+      ["a mention next to inline code", "`pnpm test` fails, @test-bot", true],
+      ["a mention after a quote", "> @test-bot said\n\n@test-bot again", true],
+      ["a mention after a hard line break", "Thanks  \n@test-bot", true],
+      ["a mention after inline HTML", "x<br>@test-bot", true],
+      ["a mention in inline code", "run `@test-bot review`", false],
+      ["a mention in a code block", "```\n@test-bot review\n```", false],
+      ["a mention in a block quote", "> @test-bot review", false],
+      ["a mention in an HTML comment", "<!-- @test-bot review -->", false],
+      ["a mention in an HTML block", "<details>\n@test-bot\n</details>", false],
+      ["a mention in image alt text", "![@test-bot](logo.png)", false],
+      ["a longer username", "@test-botx please review", false],
+      ["a hyphenated username", "@test-bot-two please review", false],
+      ["an email address", "mail jane@test-bot.com", false],
+    ] as const;
+
+    it.each(
+      (["issue_comment", "pull_request_review_comment"] as const).flatMap(
+        (eventType) =>
+          cases.map(
+            ([label, body, expected]) =>
+              [eventType, label, body, expected] as const
+          )
+      )
+    )("sets isMention in %s webhooks for %s", async (eventType, _, body, expected) => {
+      const message = await dispatchComment(eventType, body);
+
+      expect(message.isMention).toBe(expected);
     });
   });
 

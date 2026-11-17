@@ -32,6 +32,7 @@ import type {
 import { ConsoleLogger, convertEmojiPlaceholders, Message } from "chat";
 import { cardToGitHubMarkdown } from "./cards";
 import { GitHubFormatConverter } from "./markdown";
+import { mentionsUser } from "./mention";
 import type {
   GitHubAdapterAutoConfig,
   GitHubAdapterConfig,
@@ -861,11 +862,16 @@ export class GitHubAdapter
     threadType: "pr" | "issue" = "pr"
   ): Message<GitHubRawMessage> {
     const author = this.parseAuthor(comment.user);
+    const { text, formatted } = this.formatConverter.parseIncoming(
+      comment.body
+    );
 
     return new Message({
       id: comment.id.toString(),
       threadId,
-      ...this.formatConverter.parseIncoming(comment.body),
+      text,
+      formatted,
+      isMention: mentionsUser(formatted, this.userName),
       raw: {
         type: "issue_comment",
         comment,
@@ -901,11 +907,16 @@ export class GitHubAdapter
     threadId: string
   ): Message<GitHubRawMessage> {
     const author = this.parseAuthor(comment.user);
+    const { text, formatted } = this.formatConverter.parseIncoming(
+      comment.body
+    );
 
     return new Message({
       id: comment.id.toString(),
       threadId,
-      ...this.formatConverter.parseIncoming(comment.body),
+      text,
+      formatted,
+      isMention: mentionsUser(formatted, this.userName),
       raw: {
         type: "review_comment",
         comment,
