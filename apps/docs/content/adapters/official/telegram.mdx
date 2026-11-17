@@ -315,6 +315,14 @@ Incoming media groups are delivered as one message after the album settles, with
 
 Multiple `files` or compatible `attachments` are sent as Telegram media groups. `files` upload as documents; `attachments` preserve image, audio, video, or file media type.
 
+## Message edits
+
+`onMessageUpdated` fires for `edited_message`, `edited_channel_post`, and, in Business mode, `edited_business_message`. Edits don't start the typing indicator or run slash commands, and they don't reach `onNewMention`, `onDirectMessage`, or `onSubscribedMessage`.
+
+Telegram sends only the new version. `previousMessage` is the last version the adapter saw: an earlier edit, the message cached in this process, or the message in [thread history](/docs/history#thread-history). It is `undefined` when the adapter never saw the message. With `persistThreadHistory: false`, only messages cached in the current process are used.
+
+An edit of one item in an album arrives on its own, with that item's message ID, not the ID of the combined album message. An edit older than one already reported for the same message is ignored.
+
 ## Threads
 
 By default, each Telegram chat is one thread, `telegram:{chatId}`. A message that Telegram marks with `is_topic_message` belongs to a topic, and each topic is its own thread, `telegram:{chatId}:{messageThreadId}`. The Bot API sets that field for topics in a forum supergroup and in a private chat with the bot. Business conversations use `telegram:biz:{connectionId}:{chatId}`, as described in [Business mode](#business-mode).

@@ -25,6 +25,7 @@ import type {
   Logger,
   RawMessage,
   Root,
+  SerializedMessage,
   StreamChunk,
   StreamOptions,
   ThreadInfo,
@@ -41,6 +42,7 @@ import {
   NotImplementedError,
   StreamingMarkdownRenderer,
   stringifyMarkdown,
+  ThreadHistoryCache,
   toPlainText,
 } from "chat";
 import {
@@ -243,6 +245,11 @@ const TELEGRAM_DEFAULT_ALLOWED_UPDATES = [
  * overwrites the entry; the TTL only bounds staleness if that update is lost.
  */
 const TELEGRAM_BUSINESS_CONNECTION_TTL_MS = 60 * 60 * 1000;
+const TELEGRAM_EDITED_MESSAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function versionTime(message: Message): number {
+  return (message.metadata.editedAt ?? message.metadata.dateSent).getTime();
+}
 
 function normalizeBotTokenProvider(
   botToken: string | (() => string | Promise<string>)
@@ -1018,17 +1025,16 @@ export class TelegramAdapter
       tasks.push(task);
     }
 
-    const messageUpdate =
-      update.message ??
-      update.edited_message ??
-      update.channel_post ??
-      update.edited_channel_post;
+    const messageUpdate = update.message ?? update.channel_post;
+    const editedMessageUpdate =
+      update.edited_message ?? update.edited_channel_post;
     const businessMessageUpdate =
       update.business_message ?? update.edited_business_message;
     const userId =
       update.callback_query?.from.id ??
       update.message_reaction?.user?.id ??
       messageUpdate?.from?.id ??
+      editedMessageUpdate?.from?.id ??
       businessMessageUpdate?.from?.id;
 
     if (
@@ -1056,6 +1062,22 @@ export class TelegramAdapter
       if (task) {
         tasks.push(task);
       }
+    }
+
+    if (editedMessageUpdate) {
+      const task = this.handleEditedMessageUpdate(
+        editedMessageUpdate,
+        this.threadIdForMessage(editedMessageUpdate),
+        options
+      );
+      const tracked = task.catch((error) => {
+        this.logger.warn("Failed to process edited Telegram message", {
+          error: String(error),
+          messageId: editedMessageUpdate.message_id,
+        });
+      });
+      options?.waitUntil?.(tracked);
+      tasks.push(task);
     }
 
     if (update.callback_query) {
@@ -1192,6 +1214,11 @@ export class TelegramAdapter
       businessConnectionId: connectionId,
     });
 
+    if (routing.isEdit) {
+      await this.handleEditedMessageUpdate(telegramMessage, threadId, options);
+      return;
+    }
+
     if (telegramMessage.media_group_id) {
       const task = this.processIncomingMediaGroup(
         telegramMessage,
@@ -1210,9 +1237,11 @@ export class TelegramAdapter
       return;
     }
 
-    const command =
-      !routing.isEdit &&
-      this.handleSlashCommandUpdate(telegramMessage, threadId, options);
+    const command = this.handleSlashCommandUpdate(
+      telegramMessage,
+      threadId,
+      options
+    );
     if (command) {
       await command;
       return;
@@ -1259,6 +1288,91 @@ export class TelegramAdapter
     this.cacheMessage(parsedMessage);
 
     return this.chat.processMessage(this, threadId, parsedMessage, options);
+  }
+
+  protected async handleEditedMessageUpdate(
+    telegramMessage: TelegramMessage,
+    threadId: string,
+    options?: WebhookOptions
+  ): Promise<void> {
+    if (!this.chat) {
+      return;
+    }
+
+    const message = this.parseTelegramMessage(telegramMessage, threadId);
+    const previousMessage = await this.findLatestMessageVersion(message).catch(
+      (error) => {
+        this.logger.warn("Failed to load Telegram message before edit", {
+          error: String(error),
+          messageId: message.id,
+        });
+        return undefined;
+      }
+    );
+    if (
+      previousMessage &&
+      versionTime(previousMessage) > versionTime(message)
+    ) {
+      this.logger.debug("Ignoring Telegram edit older than one already seen", {
+        messageId: message.id,
+      });
+      return;
+    }
+
+    this.cacheMessage(message);
+    if (this.persistThreadHistory) {
+      await this.chat
+        .getState()
+        .set(
+          this.editedMessageKey(message),
+          message.toJSON(),
+          TELEGRAM_EDITED_MESSAGE_TTL_MS
+        )
+        .catch((error) => {
+          this.logger.warn("Failed to store edited Telegram message", {
+            error: String(error),
+            messageId: message.id,
+          });
+        });
+    }
+
+    await this.chat.processMessageUpdated(
+      { adapter: this, message, previousMessage, threadId },
+      options
+    );
+  }
+
+  protected editedMessageKey(message: Message<TelegramRawMessage>): string {
+    return `${this.name}:edited-message:${message.threadId}:${message.id}`;
+  }
+
+  protected async findLatestMessageVersion(
+    message: Message<TelegramRawMessage>
+  ): Promise<Message<TelegramRawMessage> | undefined> {
+    const cached = this.messageCache
+      .get(message.threadId)
+      ?.find((item) => item.id === message.id);
+    const state = this.chat?.getState();
+    if (!(state && this.persistThreadHistory)) {
+      return cached;
+    }
+
+    const stored = await state.get<SerializedMessage>(
+      this.editedMessageKey(message)
+    );
+    if (stored) {
+      return Message.fromJSON<TelegramRawMessage>(stored);
+    }
+    if (cached) {
+      return cached;
+    }
+
+    const history = await new ThreadHistoryCache(state).getMessages(
+      message.threadId
+    );
+    return history.find((item) => item.id === message.id) as
+      | Message<TelegramRawMessage>
+      | undefined;
   }
 
   protected async processIncomingMediaGroup(

@@ -461,6 +461,270 @@ describe("thread history persistence", () => {
   });
 });
 
+describe("edited messages", () => {
+  const bot = { id: 999, is_bot: true, first_name: "Bot", username: "mybot" };
+  const channel = { id: -100_200, type: "channel", title: "News" } as const;
+  let updateId = 0;
+
+  async function connect(
+    config: Partial<Parameters<typeof createTelegramAdapter>[0]> = {},
+    state = createMockState()
+  ) {
+    mockFetch.mockImplementation(async (input: RequestInfo | URL) =>
+      telegramOk(String(input).endsWith("/getMe") ? bot : true)
+    );
+    const adapter = createTelegramAdapter({
+      botToken: "token",
+      logger: mockLogger,
+      mode: "webhook",
+      userName: "mybot",
+      ...config,
+    });
+    const chat = new Chat({
+      adapters: { telegram: adapter },
+      logger: mockLogger,
+      state,
+      userName: "mybot",
+    });
+    const updated = vi.fn();
+    const received = vi.fn();
+    chat.onMessageUpdated(updated);
+    chat.onDirectMessage(received);
+    chat.onNewMention(received);
+    chat.onNewMessage(received);
+    chat.onSlashCommand(received);
+    await chat.initialize();
+
+    const send = async (update: Omit<TelegramUpdate, "update_id">) => {
+      const tasks: Promise<unknown>[] = [];
+      await adapter.handleWebhook(
+        new Request("https://example.com/webhook", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ update_id: ++updateId, ...update }),
+        }),
+        { waitUntil: (task) => tasks.push(task) }
+      );
+      await Promise.all(tasks);
+    };
+
+    return { received, send, state, updated };
+  }
+
+  function lastUpdate(updated: ReturnType<typeof vi.fn>) {
+    const [, message, previousMessage] = updated.mock.calls.at(-1) as [
+      unknown,
+      Message,
+      Message | undefined,
+    ];
+    return { message, previousMessage };
+  }
+
+  it.each([
+    [
+      "edited_message",
+      { edited_message: sampleMessage({ edit_date: 1_735_689_700 }) },
+    ],
+    [
+      "edited_channel_post",
+      {
+        edited_channel_post: sampleMessage({
+          chat: channel,
+          edit_date: 1_735_689_700,
+          from: undefined,
+        }),
+      },
+    ],
+  ])("reports %s to onMessageUpdated without typing", async (_, update) => {
+    const { received, send, updated } = await connect();
+
+    await send(update);
+
+    expect(updated).toHaveBeenCalledTimes(1);
+    expect(received).not.toHaveBeenCalled();
+    expect(telegramMethods()).not.toContain("sendChatAction");
+  });
+
+  it("reports a captured edited_business_message with the version it replaced", async () => {
+    const { received, send, updated } = await connect({ businessMode: true });
+    const { update_id: _c, ...connection } = loadSampleUpdate(
+      "Business connection (Connected Business Bot)"
+    );
+    const { update_id: _m, ...original } = loadSampleUpdate(
+      "Business message (customer to business account)"
+    );
+    const { update_id: _e, ...edit } = loadSampleUpdate(
+      "Edited business message"
+    );
+
+    await send(connection);
+    await send(original);
+    received.mockClear();
+    mockFetch.mockClear();
+    await send(edit);
+
+    const { message, previousMessage } = lastUpdate(updated);
+    expect(message.text).toBe("Hi, I need help with my order #4821");
+    expect(message.metadata.edited).toBe(true);
+    expect(previousMessage?.text).toBe("Hi, I need help with my order");
+    expect(received).not.toHaveBeenCalled();
+    expect(telegramMethods()).not.toContain("sendChatAction");
+  });
+
+  it("gives each edit the version before it, across adapter instances", async () => {
+    const first = await connect();
+    await first.send({ message: sampleMessage({ text: "hi" }) });
+    await first.send({
+      edited_message: sampleMessage({
+        text: "hi there",
+        edit_date: 1_735_689_700,
+      }),
+    });
+    expect(lastUpdate(first.updated).previousMessage?.text).toBe("hi");
+
+    const second = await connect({}, first.state);
+    await second.send({
+      edited_message: sampleMessage({
+        text: "hi all",
+        edit_date: 1_735_689_800,
+      }),
+    });
+    expect(lastUpdate(second.updated).previousMessage?.text).toBe("hi there");
+
+    const third = await connect({}, first.state);
+    await third.send({
+      edited_message: sampleMessage({ text: "late", edit_date: 1_735_689_750 }),
+    });
+    expect(third.updated).not.toHaveBeenCalled();
+  });
+
+  it("reads the original from thread history on a fresh instance", async () => {
+    const first = await connect();
+    await first.send({ message: sampleMessage({ text: "hi" }) });
+
+    const second = await connect({}, first.state);
+    await second.send({
+      edited_message: sampleMessage({
+        text: "hi there",
+        edit_date: 1_735_689_700,
+      }),
+    });
+
+    expect(lastUpdate(second.updated).previousMessage?.text).toBe("hi");
+  });
+
+  it("reports an edit of a message it never saw without a previous version", async () => {
+    const { send, updated } = await connect();
+
+    await send({
+      edited_message: sampleMessage({
+        text: "hello",
+        edit_date: 1_735_689_700,
+      }),
+    });
+
+    expect(updated).toHaveBeenCalledTimes(1);
+    expect(lastUpdate(updated).previousMessage).toBeUndefined();
+  });
+
+  it("reports caption and media edits, including ones without text", async () => {
+    const { received, send, updated } = await connect();
+    const photo = [
+      { file_id: "photo", file_unique_id: "p", width: 1, height: 1 },
+    ];
+
+    await send({
+      edited_message: sampleMessage({
+        caption: "new caption",
+        edit_date: 1_735_689_700,
+        photo,
+        text: undefined,
+      }),
+    });
+    await send({
+      edited_message: sampleMessage({
+        edit_date: 1_735_689_800,
+        photo,
+        text: undefined,
+      }),
+    });
+
+    expect(updated).toHaveBeenCalledTimes(2);
+    const [[, captioned, before], [, bare]] = updated.mock.calls as [
+      unknown,
+      Message,
+      Message | undefined,
+    ][];
+    expect(captioned.text).toBe("new caption");
+    expect(captioned.attachments).toHaveLength(1);
+    expect(before).toBeUndefined();
+    expect(bare.text).toBe("");
+    expect(received).not.toHaveBeenCalled();
+  });
+
+  it("reports an album item edit right away instead of regrouping the album", async () => {
+    const { received, send, updated } = await connect();
+
+    await send({
+      edited_message: sampleMessage({
+        caption: "album",
+        edit_date: 1_735_689_700,
+        media_group_id: "album-1",
+        photo: [{ file_id: "photo", file_unique_id: "p", width: 1, height: 1 }],
+        text: undefined,
+      }),
+    });
+
+    expect(updated).toHaveBeenCalledTimes(1);
+    expect(lastUpdate(updated).message.text).toBe("album");
+    expect(received).not.toHaveBeenCalled();
+  });
+
+  it("does not run a slash command from an edit", async () => {
+    const { received, send, updated } = await connect();
+
+    await send({
+      edited_message: sampleMessage({
+        edit_date: 1_735_689_700,
+        entities: [{ type: "bot_command", offset: 0, length: 6 }],
+        text: "/start",
+      }),
+    });
+
+    expect(updated).toHaveBeenCalledTimes(1);
+    expect(received).not.toHaveBeenCalled();
+  });
+
+  it("keeps edits out of state when persistThreadHistory is false", async () => {
+    const { send, state, updated } = await connect({
+      persistThreadHistory: false,
+    });
+
+    await send({ message: sampleMessage({ text: "hi" }) });
+    await send({
+      edited_message: sampleMessage({
+        text: "hi there",
+        edit_date: 1_735_689_700,
+      }),
+    });
+
+    expect(lastUpdate(updated).previousMessage?.text).toBe("hi");
+    expect(
+      [...state.cache.keys()].filter((key) => key.includes("edited-message"))
+    ).toEqual([]);
+  });
+
+  it("drops edits from users outside allowedUserIds", async () => {
+    const { send, updated } = await connect({ allowedUserIds: ["1"] });
+
+    await send({
+      edited_message: sampleMessage({ edit_date: 1_735_689_700 }),
+    });
+
+    expect(updated).not.toHaveBeenCalled();
+  });
+});
+
 describe("constructor env var resolution", () => {
   const savedEnv = { ...process.env };
 
@@ -6281,18 +6545,15 @@ describe("TelegramAdapter", () => {
 
     const response = await adapter.handleWebhook(request);
     expect(response.status).toBe(200);
+    await vi.waitFor(() =>
+      expect(chat.processMessageUpdated).toHaveBeenCalled()
+    );
 
-    const processMessage = chat.processMessage as ReturnType<typeof vi.fn>;
-    expect(processMessage).toHaveBeenCalledTimes(1);
-
-    const [, threadId, parsedMessage] = processMessage.mock.calls[0] as [
-      unknown,
-      string,
-      { text: string },
-    ];
-
-    expect(threadId).toBe("telegram:123");
-    expect(parsedMessage.text).toBe("edited text");
+    expect(chat.processMessage).not.toHaveBeenCalled();
+    const [event] = (chat.processMessageUpdated as ReturnType<typeof vi.fn>)
+      .mock.calls[0] as [{ message: { text: string }; threadId: string }];
+    expect(event.threadId).toBe("telegram:123");
+    expect(event.message.text).toBe("edited text");
   });
 
   it("processes channel_post webhook updates", async () => {

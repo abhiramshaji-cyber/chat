@@ -337,6 +337,7 @@ The adapter waits about 1 second between messages in private chats and about 3 s
 - Webhook mode requires `secretToken` unless `allowUnverifiedWebhooks` is explicitly enabled. Polling mode does not require webhook verification.
 - Telegram does not expose full historical message APIs to bots. `fetchMessages` / `fetchChannelMessages` return adapter-cached messages from the current process.
 - `listThreads` is not available for Telegram chats.
+- `edited_message`, `edited_channel_post`, and `edited_business_message` fire `onMessageUpdated`, without typing or slash commands. `previousMessage` is the last version the adapter saw, from an earlier edit, the process cache, or persisted thread history, and `undefined` for a message it never saw.
 - Polling and webhooks are mutually exclusive in Telegram.
 - `mode: "polling"` deletes webhook by default before calling `getUpdates`.
 - `mode: "auto"` checks `getWebhookInfo`: if a webhook URL exists it uses webhook mode; if it is empty it falls back to polling on non-serverless runtimes without deleting webhook.
