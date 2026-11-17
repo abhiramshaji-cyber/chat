@@ -2263,6 +2263,29 @@ describe("GitHubAdapter", () => {
       expect(() => JSON.stringify(message.formatted)).not.toThrow();
       expect(() => JSON.stringify(message.toJSON())).not.toThrow();
     });
+
+    const mentionCases = [
+      ["@test-bot please review", true],
+      ["run `@test-bot review`", false],
+      ["```\n@test-bot review\n```", false],
+      ["> @test-bot review", false],
+      ["<!-- @test-bot -->", false],
+      ["@test-botx hi", false],
+      ["mail jane@test-bot.com", false],
+    ] as const;
+
+    it.each(
+      (["issue_comment", "pull_request_review_comment"] as const).flatMap(
+        (eventType) =>
+          mentionCases.map(
+            ([body, isMention]) => [eventType, body, isMention] as const
+          )
+      )
+    )("sets isMention on %s webhooks with %j to %s", async (eventType, body, isMention) => {
+      const message = await dispatchComment(eventType, body);
+
+      expect(message.isMention).toBe(isMention);
+    });
   });
 
   describe("parseAuthor (via parseMessage)", () => {
