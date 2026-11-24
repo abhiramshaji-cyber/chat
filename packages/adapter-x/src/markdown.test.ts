@@ -74,6 +74,16 @@ describe("XFormatConverter", () => {
       expect(converter.fromAst(ast)).toBe("1. one\n2. two");
     });
 
+    it("keeps a code block in a list item indented", () => {
+      const ast = parseMarkdown("- item\n\n  ```\n  a\n  b\n  ```\n- next");
+      expect(converter.fromAst(ast)).toBe("• item\n\n  a\n  b\n• next");
+    });
+
+    it("keeps a line after a hard break in a list item indented", () => {
+      const ast = parseMarkdown("- a\\\n  b\n- c");
+      expect(converter.fromAst(ast)).toBe("• a\n  b\n• c");
+    });
+
     it("keeps code block content without fences", () => {
       const ast = parseMarkdown("```ts\nconst a = 1;\n```");
       expect(converter.fromAst(ast)).toBe("const a = 1;");
