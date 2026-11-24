@@ -166,14 +166,6 @@ async function* withoutReasoning(
   }
 }
 
-function closeUnread(stream: AsyncIterable<unknown>): void {
-  try {
-    stream[Symbol.asyncIterator]()
-      .return?.()
-      .catch(() => {});
-  } catch {}
-}
-
 async function* takeUntilAborted<T>(
   source: AsyncIterable<T>,
   signal: AbortSignal
@@ -207,6 +199,14 @@ async function* takeUntilAborted<T>(
       });
     }
   }
+}
+
+function closeUnread(stream: AsyncIterable<unknown>): void {
+  try {
+    stream[Symbol.asyncIterator]()
+      .return?.()
+      .catch(() => {});
+  } catch {}
 }
 
 export class ThreadImpl<TState = Record<string, unknown>>
