@@ -166,6 +166,14 @@ async function* withoutReasoning(
   }
 }
 
+function closeUnread(stream: AsyncIterable<unknown>): void {
+  try {
+    stream[Symbol.asyncIterator]()
+      .return?.()
+      .catch(() => {});
+  } catch {}
+}
+
 async function* takeUntilAborted<T>(
   source: AsyncIterable<T>,
   signal: AbortSignal
@@ -789,12 +797,33 @@ export class ThreadImpl<TState = Record<string, unknown>>
     return this.adapter.scheduleMessage(this.id, postable, options);
   }
 
+  private async handleStream(
+    rawStream: AsyncIterable<string | StreamChunk | StreamEvent>,
+    callerOptions?: StreamOptions
+  ): Promise<SentMessage> {
+    let started = false;
+    const tracked: AsyncIterable<string | StreamChunk | StreamEvent> = {
+      [Symbol.asyncIterator]: () => {
+        started = true;
+        return rawStream[Symbol.asyncIterator]();
+      },
+    };
+    try {
+      return await this.streamToThread(tracked, callerOptions);
+    } catch (error) {
+      if (!started) {
+        closeUnread(rawStream);
+      }
+      throw error;
+    }
+  }
+
   /**
    * Handle streaming from an AsyncIterable.
    * Normalizes the stream (supports both textStream and fullStream from AI SDK),
    * then uses the adapter's stream implementation if available, otherwise falls back to post+edit.
    */
-  private async handleStream(
+  private async streamToThread(
     rawStream: AsyncIterable<string | StreamChunk | StreamEvent>,
     callerOptions?: StreamOptions
   ): Promise<SentMessage> {

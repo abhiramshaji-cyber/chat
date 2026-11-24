@@ -2893,6 +2893,84 @@ describe("ThreadImpl", () => {
     });
   });
 
+  describe("unread source stream cleanup", () => {
+    function trackedSource() {
+      const close = vi.fn(async () => ({ done: true as const, value: "" }));
+      const open = vi.fn(() => ({
+        next: async () => ({ done: false as const, value: "word " }),
+        return: close,
+      }));
+      const source: AsyncIterable<string> = { [Symbol.asyncIterator]: open };
+      return { source, open, close };
+    }
+
+    function createThread(adapter: Adapter): ThreadImpl {
+      return new ThreadImpl({
+        id: "slack:C123:1234.5678",
+        adapter,
+        channelId: "C123",
+        stateAdapter: createMockState(),
+      });
+    }
+
+    it("closes the source when the adapter stream throws before reading", async () => {
+      const { source, close } = trackedSource();
+      const adapter = createMockAdapter();
+      adapter.stream = async () => {
+        throw new Error("aborted");
+      };
+
+      await expect(createThread(adapter).post(source)).rejects.toThrow(
+        "aborted"
+      );
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it("cancels a ReadableStream the adapter never read", async () => {
+      const cancel = vi.fn();
+      const source = new ReadableStream<string>({ cancel });
+      const adapter = createMockAdapter();
+      adapter.stream = async () => {
+        throw new Error("aborted");
+      };
+
+      await expect(
+        createThread(adapter).post(source as unknown as AsyncIterable<string>)
+      ).rejects.toThrow("aborted");
+      await vi.waitFor(() => expect(cancel).toHaveBeenCalledTimes(1));
+    });
+
+    it("closes the source when the fallback placeholder post fails", async () => {
+      const { source, close } = trackedSource();
+      const adapter = createMockAdapter();
+      adapter.stream = undefined;
+      vi.mocked(adapter.postMessage).mockRejectedValueOnce(
+        new Error("post failed")
+      );
+
+      await expect(createThread(adapter).post(source)).rejects.toThrow(
+        "post failed"
+      );
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves a source it read to the stream pipeline", async () => {
+      const { source, open } = trackedSource();
+      const adapter = createMockAdapter();
+      adapter.stream = async (_threadId, textStream) => {
+        for await (const _ of textStream) {
+          throw new Error("too long");
+        }
+        return null;
+      };
+
+      await expect(createThread(adapter).post(source)).rejects.toThrow(
+        "too long"
+      );
+      expect(open).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("Streaming with updateIntervalMs", () => {
     it("should use custom streamingUpdateIntervalMs from config", async () => {
       vi.useFakeTimers();
