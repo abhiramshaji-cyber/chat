@@ -1219,10 +1219,7 @@ export class DiscordAdapter implements Adapter<DiscordThreadId, unknown> {
           if (channel.parent_id) {
             discordThreadId = channelId;
             parentChannelId = channel.parent_id;
-            this.threadParentCache.set(channelId, {
-              parentId: channel.parent_id,
-              expiresAt: Date.now() + DiscordAdapter.THREAD_PARENT_CACHE_TTL,
-            });
+            this.rememberThreadParent(channelId, channel.parent_id);
           }
         } catch (error) {
           this.logger.error("Failed to fetch thread parent for reaction", {
@@ -1824,9 +1821,19 @@ export class DiscordAdapter implements Adapter<DiscordThreadId, unknown> {
   }
 
   private rememberThreadParent(threadId: string, parentId: string): void {
+    const now = Date.now();
+    for (const [id, entry] of this.threadParentCache) {
+      if (entry.expiresAt > now) {
+        break;
+      }
+      this.threadParentCache.delete(id);
+    }
+
+    // delete before set keeps map order sorted by expiresAt, which the sweep relies on
+    this.threadParentCache.delete(threadId);
     this.threadParentCache.set(threadId, {
       parentId,
-      expiresAt: Date.now() + DiscordAdapter.THREAD_PARENT_CACHE_TTL,
+      expiresAt: now + DiscordAdapter.THREAD_PARENT_CACHE_TTL,
     });
   }
 

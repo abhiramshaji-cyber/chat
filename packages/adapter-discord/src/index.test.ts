@@ -5387,6 +5387,124 @@ describe("handleForwardedReaction - thread parent caching", () => {
   });
 });
 
+describe("thread parent cache pruning", () => {
+  const TTL = 5 * 60 * 1000;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function setup() {
+    const adapter = createDiscordAdapter({
+      botToken: "test-token",
+      publicKey: testPublicKey,
+      applicationId: "test-app-id",
+      logger: mockLogger,
+    });
+    await adapter.initialize(createMockChatInstance());
+    const cache = (
+      adapter as unknown as {
+        threadParentCache: Map<string, { parentId: string; expiresAt: number }>;
+      }
+    ).threadParentCache;
+    return { adapter, cache };
+  }
+
+  function react(
+    adapter: ReturnType<typeof createDiscordAdapter>,
+    threadId: string,
+    withThreadInfo = true
+  ) {
+    return adapter.handleWebhook(
+      new Request("https://example.com/webhook", {
+        method: "POST",
+        headers: {
+          "x-discord-gateway-token": "test-token",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "GATEWAY_MESSAGE_REACTION_ADD",
+          timestamp: Date.now(),
+          data: {
+            user_id: "user789",
+            channel_id: threadId,
+            message_id: "msg123",
+            guild_id: "guild1",
+            channel_type: 11,
+            ...(withThreadInfo && {
+              thread: { id: threadId, parent_id: "channel456" },
+            }),
+            emoji: { name: "\u{1F44D}", id: null },
+            member: { user: { id: "user789", username: "testuser" } },
+          },
+        }),
+      })
+    );
+  }
+
+  it("removes expired entries for threads that are never seen again", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { adapter, cache } = await setup();
+
+    await react(adapter, "threadA");
+    await react(adapter, "threadB");
+    expect([...cache.keys()]).toEqual(["threadA", "threadB"]);
+
+    vi.setSystemTime(Date.now() + TTL);
+    await react(adapter, "threadC");
+
+    expect([...cache.keys()]).toEqual(["threadC"]);
+  });
+
+  it("keeps fresh entries when an older one expires", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { adapter, cache } = await setup();
+
+    await react(adapter, "threadA");
+    vi.setSystemTime(Date.now() + 60_000);
+    await react(adapter, "threadB");
+    vi.setSystemTime(Date.now() + TTL - 60_000);
+    await react(adapter, "threadC");
+
+    expect([...cache.keys()]).toEqual(["threadB", "threadC"]);
+  });
+
+  it("refreshes a rewritten entry so it outlives entries written after it", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { adapter, cache } = await setup();
+
+    await react(adapter, "threadA");
+    vi.setSystemTime(Date.now() + 60_000);
+    await react(adapter, "threadB");
+    vi.setSystemTime(Date.now() + 60_000);
+    await react(adapter, "threadA");
+    vi.setSystemTime(Date.now() + TTL - 60_000);
+    await react(adapter, "threadC");
+
+    expect([...cache.keys()]).toEqual(["threadA", "threadC"]);
+  });
+
+  it("prunes when the parent is fetched for a reaction", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { adapter, cache } = await setup();
+    const fetchSpy = vi.spyOn(adapter as any, "discordFetch").mockResolvedValue(
+      new Response(JSON.stringify({ parent_id: "channel456" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    await react(adapter, "threadA");
+    vi.setSystemTime(Date.now() + TTL);
+    await react(adapter, "threadB", false);
+
+    expect(fetchSpy).toHaveBeenCalledWith("/channels/threadB", "GET");
+    expect([...cache.entries()]).toEqual([
+      ["threadB", { parentId: "channel456", expiresAt: Date.now() + TTL }],
+    ]);
+  });
+});
+
 describe("gateway forwarding", () => {
   class TestForwardingDiscordAdapter extends DiscordAdapter {
     enrich(
