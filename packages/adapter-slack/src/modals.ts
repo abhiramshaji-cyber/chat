@@ -14,7 +14,7 @@ import type {
   SelectOptionElement,
   TextInputElement,
 } from "chat";
-import { convertFieldsToBlock, convertTextToBlock } from "./cards";
+import { convertFieldsToBlocks, convertTextToBlock } from "./cards";
 import type { SlackBlock } from "./event";
 
 export interface SlackView {
@@ -106,11 +106,11 @@ export function modalToSlackView(
       : { type: "plain_text", text: "Cancel" },
     notify_on_close: modal.notifyOnClose,
     private_metadata: contextId,
-    blocks: modal.children.map(modalChildToBlock),
+    blocks: modal.children.flatMap(modalChildToBlock),
   };
 }
 
-function modalChildToBlock(child: ModalChild): SlackBlock {
+function modalChildToBlock(child: ModalChild): SlackBlock | SlackBlock[] {
   switch (child.type) {
     case "text_input":
       return textInputToBlock(child);
@@ -127,7 +127,7 @@ function modalChildToBlock(child: ModalChild): SlackBlock {
     case "text":
       return convertTextToBlock(child);
     case "fields":
-      return convertFieldsToBlock(child);
+      return convertFieldsToBlocks(child);
     default:
       throw new Error(
         `Unknown modal child type: ${(child as { type: string }).type}`

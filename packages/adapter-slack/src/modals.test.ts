@@ -1,6 +1,8 @@
 import {
   DateInput,
   ExternalSelect,
+  Field,
+  Fields,
   Modal,
   NumberInput,
   RadioSelect,
@@ -98,6 +100,28 @@ describe("modalToSlackView", () => {
 
     expect(view.submit).toEqual({ type: "plain_text", text: "Send" });
     expect(view.close).toEqual({ type: "plain_text", text: "Dismiss" });
+  });
+
+  it("splits more than 10 fields into consecutive sections", () => {
+    const modal = Modal({
+      callbackId: "test",
+      title: "Test",
+      children: [
+        Fields(
+          Array.from({ length: 11 }, (_, i) =>
+            Field({ label: `L${i}`, value: `V${i}` })
+          )
+        ),
+      ],
+    });
+
+    const view = modalToSlackView(modal);
+
+    expect(view.blocks.map((block) => block.type)).toEqual([
+      "section",
+      "section",
+    ]);
+    expect(view.blocks.map((block) => block.fields?.length)).toEqual([10, 1]);
   });
 
   it("converts multiline text input", () => {

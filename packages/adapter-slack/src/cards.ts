@@ -32,6 +32,7 @@ import {
   chartElementToFallbackText,
   tableElementToAscii,
 } from "chat";
+import { LIMITS } from "./blocks/limits";
 import type { SlackBlock } from "./event";
 import { escapeSlackText, markdownBoldToSlackMrkdwn } from "./format";
 
@@ -165,11 +166,11 @@ function convertChildToBlocks(
     case "divider":
       return [convertDividerToBlock(child)];
     case "actions":
-      return [convertActionsToBlock(child)];
+      return convertActionsToBlocks(child);
     case "section":
       return convertSectionToBlocks(child, state);
     case "fields":
-      return [convertFieldsToBlock(child)];
+      return convertFieldsToBlocks(child);
     case "link":
       return [convertLinkToBlock(child)];
     case "table":
@@ -263,7 +264,7 @@ type SlackActionElement =
   | SlackSelectElement
   | SlackRadioSelectElement;
 
-function convertActionsToBlock(element: ActionsElement): SlackBlock {
+function convertActionsToBlocks(element: ActionsElement): SlackBlock[] {
   const elements: SlackActionElement[] = element.children.map((child) => {
     if (child.type === "link-button") {
       return convertLinkButtonToElement(child);
@@ -277,10 +278,16 @@ function convertActionsToBlock(element: ActionsElement): SlackBlock {
     return convertButtonToElement(child);
   });
 
-  return {
+  return chunk(elements, LIMITS.actionsElements).map((group) => ({
     type: "actions",
-    elements,
-  };
+    elements: group,
+  }));
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  return Array.from({ length: Math.ceil(items.length / size) }, (_, i) =>
+    items.slice(i * size, (i + 1) * size)
+  );
 }
 
 function convertButtonToElement(button: ButtonElement): SlackButtonElement {
@@ -727,7 +734,7 @@ function convertSectionToBlocks(
   return blocks;
 }
 
-export function convertFieldsToBlock(element: FieldsElement): SlackBlock {
+export function convertFieldsToBlocks(element: FieldsElement): SlackBlock[] {
   const fields: SlackTextObject[] = [];
 
   // Room for the `*` pair around the label and the newline
@@ -741,10 +748,10 @@ export function convertFieldsToBlock(element: FieldsElement): SlackBlock {
     fields.push({ type: "mrkdwn", text: `*${label}*\n${value}` });
   }
 
-  return {
+  return chunk(fields, LIMITS.fields).map((group) => ({
     type: "section",
-    fields,
-  };
+    fields: group,
+  }));
 }
 
 /**

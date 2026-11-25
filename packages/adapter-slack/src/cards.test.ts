@@ -437,6 +437,101 @@ describe("cardToBlockKit Slack length limits", () => {
   });
 });
 
+describe("cardToBlockKit Slack element count limits", () => {
+  const buttons = (count: number) =>
+    Array.from({ length: count }, (_, i) =>
+      Button({ id: `b${i + 1}`, label: `B${i + 1}` })
+    );
+  const fields = (count: number) =>
+    Array.from({ length: count }, (_, i) =>
+      Field({ label: `L${i + 1}`, value: `V${i + 1}` })
+    );
+  const actionIds = (blocks: ReturnType<typeof cardToBlockKit>) =>
+    blocks.map((block) =>
+      (block.elements as { action_id: string }[]).map((e) => e.action_id)
+    );
+  const fieldTexts = (blocks: ReturnType<typeof cardToBlockKit>) =>
+    blocks.map((block) =>
+      (block.fields as { text: string }[]).map((f) => f.text)
+    );
+
+  it.each([
+    [1, [1]],
+    [25, [25]],
+    [26, [25, 1]],
+    [51, [25, 25, 1]],
+  ])("splits %i buttons into actions blocks of %j", (count, sizes) => {
+    const blocks = cardToBlockKit(
+      Card({ children: [Actions(buttons(count))] })
+    );
+
+    expect(blocks.map((block) => block.type)).toEqual(
+      sizes.map(() => "actions")
+    );
+    expect(actionIds(blocks).map((ids) => ids.length)).toEqual(sizes);
+    expect(actionIds(blocks).flat()).toEqual(
+      buttons(count).map((button) => button.id)
+    );
+  });
+
+  it.each([
+    [1, [1]],
+    [10, [10]],
+    [11, [10, 1]],
+    [21, [10, 10, 1]],
+  ])("splits %i fields into sections of %j", (count, sizes) => {
+    const blocks = cardToBlockKit(Card({ children: [Fields(fields(count))] }));
+
+    expect(blocks.map((block) => block.type)).toEqual(
+      sizes.map(() => "section")
+    );
+    expect(fieldTexts(blocks).map((texts) => texts.length)).toEqual(sizes);
+    expect(fieldTexts(blocks).flat()).toEqual(
+      fields(count).map((field) => `*${field.label}*\n${field.value}`)
+    );
+  });
+
+  it("emits no block for empty actions or fields", () => {
+    const blocks = cardToBlockKit(
+      Card({ children: [Actions([]), Fields([])] })
+    );
+
+    expect(blocks).toEqual([]);
+  });
+
+  it("keeps mixed action elements in order across the split", () => {
+    const children = [
+      ...buttons(24),
+      LinkButton({ url: "https://chat-sdk.dev", label: "Docs" }),
+      Select({
+        id: "pick",
+        label: "Pick",
+        options: [SelectOption({ label: "One", value: "one" })],
+      }),
+      RadioSelect({
+        id: "radio",
+        label: "Radio",
+        options: [SelectOption({ label: "One", value: "one" })],
+      }),
+    ];
+    const blocks = cardToBlockKit(
+      Card({ children: [CardText("Before"), Actions(children), Divider()] })
+    );
+    const [lastOfFirst] = (blocks[1].elements as { type: string }[]).slice(-1);
+
+    expect(blocks.map((block) => block.type)).toEqual([
+      "section",
+      "actions",
+      "actions",
+      "divider",
+    ]);
+    expect(lastOfFirst.type).toBe("button");
+    expect(
+      (blocks[2].elements as { type: string }[]).map((e) => e.type)
+    ).toEqual(["static_select", "radio_buttons"]);
+  });
+});
+
 describe("cardToBlockKit Slack length limits for other fields", () => {
   const sectionText = (block: unknown) =>
     (block as { text: { text: string } }).text.text;
