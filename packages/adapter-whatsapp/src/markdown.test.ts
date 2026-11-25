@@ -105,8 +105,32 @@ describe("WhatsAppFormatConverter", () => {
       ["`a*b`*c*", "`a*b`**c**"],
       ["* item\n* *two*", "* item\n* **two**"],
       ["**std** ~~std~~", "**std** ~~std~~"],
+      ["*https://x.com/~u*", "**https://x.com/~u**"],
+      ["www.example.com/~bob", "www.example.com/~bob"],
     ])("converts %j to standard markdown", (input, expected) => {
       expect(converter.toAst(input)).toEqual(parseMarkdown(expected));
+    });
+
+    it.each([
+      [
+        "visit https://example.com/~user/page now",
+        "https://example.com/~user/page",
+      ],
+      ["https://x.com/a*b", "https://x.com/a*b"],
+    ])("keeps markers in the bare url of %j", (input, url) => {
+      const paragraph = converter.toAst(input).children[0];
+      const link =
+        paragraph?.type === "paragraph"
+          ? paragraph.children.find((node) => node.type === "link")
+          : undefined;
+      expect(link).toMatchObject({ type: "link", url });
+    });
+
+    it("keeps the tilde in a www link", () => {
+      const paragraph = converter.toAst("www.example.com/~bob").children[0];
+      expect(paragraph).toMatchObject({
+        children: [{ type: "link", url: "http://www.example.com/~bob" }],
+      });
     });
 
     it("parses an empty message", () => {

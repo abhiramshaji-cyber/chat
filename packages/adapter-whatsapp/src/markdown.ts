@@ -44,6 +44,7 @@ const INLINE_PAIRS = {
 } as const;
 const CODE_SPAN = /(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)/g;
 const MARKER = /[*~]/g;
+const BARE_URL = /\b(?:https?:\/\/|www\.)\S*[^\s*~]/giu;
 const LIST_BULLET = /^[ \t>]*\*[ \t]/gm;
 const BLOCK_START = /(^|\n)(?:([>*-])|(\d+)\.)(?= )/g;
 
@@ -205,7 +206,9 @@ export class WhatsAppFormatConverter extends BaseFormatConverter {
   }
 
   private fromWhatsAppFormat(text: string): string {
-    const masked = text.replace(CODE_SPAN, (span) => span.replace(MARKER, " "));
+    const masked = text
+      .replace(CODE_SPAN, (span) => span.replace(MARKER, " "))
+      .replace(BARE_URL, (url) => url.replace(MARKER, " "));
     const isSingle = (index: number) =>
       masked[index - 1] !== masked[index] &&
       masked[index + 1] !== masked[index] &&
