@@ -1,4 +1,4 @@
-import { type Root, stringifyMarkdown } from "chat";
+import { parseMarkdown, type Root, stringifyMarkdown } from "chat";
 import { describe, expect, it, vi } from "vitest";
 import { WhatsAppFormatConverter } from "./markdown";
 
@@ -77,6 +77,40 @@ describe("WhatsAppFormatConverter", () => {
       const ast = converter.toAst("before ```code``` after");
       const types = ast.children.map((child) => child.type);
       expect(types).toEqual(["paragraph", "code", "paragraph"]);
+    });
+
+    it.each([
+      "2 * 3 and 4 * 5",
+      "5*3=15 and 2*4=8",
+      "a*b*c",
+      "price ~5 to ~10",
+      "~/a and ~/b",
+      "é*x*é and ü~y~ü",
+    ])("keeps literal markers in %j", (input) => {
+      expect(converter.toAst(input).children).toMatchObject([
+        { type: "paragraph", children: [{ type: "text", value: input }] },
+      ]);
+    });
+
+    it.each([
+      ["*bold* word", "**bold** word"],
+      ["line ~end~", "line ~~end~~"],
+      ["(*a*), ~b~.", "(**a**), ~~b~~."],
+      ["*a* and *b* and ~c~", "**a** and **b** and ~~c~~"],
+      ["*~x~* ~*y*~", "**~~x~~** ~~**y**~~"],
+      ["*é*", "**é**"],
+      ["use `a*b*c` and `~x~` here", "use `a*b*c` and `~x~` here"],
+      ["*a `b*` c", "\\*a `b*` c"],
+      ["*a `b*` c*", "**a `b*` c**"],
+      ["`a*b`*c*", "`a*b`**c**"],
+      ["* item\n* *two*", "* item\n* **two**"],
+      ["**std** ~~std~~", "**std** ~~std~~"],
+    ])("converts %j to standard markdown", (input, expected) => {
+      expect(converter.toAst(input)).toEqual(parseMarkdown(expected));
+    });
+
+    it("parses an empty message", () => {
+      expect(converter.toAst("")).toEqual(parseMarkdown(""));
     });
 
     it("should parse lists", () => {

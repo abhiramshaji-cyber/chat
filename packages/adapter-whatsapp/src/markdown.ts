@@ -37,11 +37,14 @@ type Info = HandleArgs[3];
 // WhatsApp has no escape syntax, so text stays literal unless it would
 // otherwise turn into formatting.
 const INLINE_PAIRS = {
-  "*": /(?:^|[^\p{L}\p{N}])\*(?=\S).*?\S\*(?![\p{L}\p{N}])/mu,
-  _: /(?:^|[^\p{L}\p{N}])_(?=\S).*?\S_(?![\p{L}\p{N}])/mu,
-  "~": /(?:^|[^\p{L}\p{N}])~(?=\S).*?\S~(?![\p{L}\p{N}])/mu,
-  "`": /(?:^|[^\p{L}\p{N}])`(?=\S).*?\S`(?![\p{L}\p{N}])/mu,
+  "*": /(?<![\p{L}\p{N}])\*(?=\S).*?\S\*(?![\p{L}\p{N}])/mu,
+  _: /(?<![\p{L}\p{N}])_(?=\S).*?\S_(?![\p{L}\p{N}])/mu,
+  "~": /(?<![\p{L}\p{N}])~(?=\S).*?\S~(?![\p{L}\p{N}])/mu,
+  "`": /(?<![\p{L}\p{N}])`(?=\S).*?\S`(?![\p{L}\p{N}])/mu,
 } as const;
+const CODE_SPAN = /(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)/g;
+const MARKER = /[*~]/g;
+const LIST_BULLET = /^[ \t>]*\*[ \t]/gm;
 const BLOCK_START = /(^|\n)(?:([>*-])|(\d+)\.)(?= )/g;
 
 // Surrounding markers belong to formatting nodes, so they only bound the text.
@@ -201,21 +204,35 @@ export class WhatsAppFormatConverter extends BaseFormatConverter {
     return super.renderPostable(message);
   }
 
-  /**
-   * Convert WhatsApp format to standard markdown.
-   * Converts single-asterisk bold to double-asterisk bold,
-   * and single-tilde strikethrough to double-tilde strikethrough.
-   *
-   * Careful not to convert _italic_ (which is the same in both formats).
-   */
   private fromWhatsAppFormat(text: string): string {
-    // Convert *bold* to **bold** (single * not preceded/followed by *, no newlines)
-    let result = text.replace(
-      /(?<!\*)\*(?!\*)([^\n*]+?)(?<!\*)\*(?!\*)/g,
-      "**$1**"
+    const masked = text.replace(CODE_SPAN, (span) => span.replace(MARKER, " "));
+    const isSingle = (index: number) =>
+      masked[index - 1] !== masked[index] &&
+      masked[index + 1] !== masked[index] &&
+      masked[index - 1] !== "\\";
+
+    const paired = new Set<number>();
+    for (const marker of ["*", "~"] as const) {
+      const pairs = new RegExp(INLINE_PAIRS[marker], "gmu");
+      for (const { index, 0: match } of masked.matchAll(pairs)) {
+        const close = index + match.length - 1;
+        if (isSingle(index) && isSingle(close)) {
+          paired.add(index);
+          paired.add(close);
+        }
+      }
+    }
+
+    const bullets = new Set(
+      Array.from(masked.matchAll(LIST_BULLET), (m) => m.index + m[0].length - 2)
     );
-    // Convert ~strike~ to ~~strike~~ (single ~ not preceded/followed by ~, no newlines)
-    result = result.replace(/(?<!~)~(?!~)([^\n~]+?)(?<!~)~(?!~)/g, "~~$1~~");
-    return result;
+    return text.replace(MARKER, (marker, index: number) => {
+      if (paired.has(index)) {
+        return marker.repeat(2);
+      }
+      const literal =
+        masked[index] === marker && isSingle(index) && !bullets.has(index);
+      return literal ? `\\${marker}` : marker;
+    });
   }
 }
